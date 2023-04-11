@@ -208,7 +208,7 @@ jobs:
           echo "MANIFEST_SHA: $MANIFEST_SHA"
 
           COSIGN_PASSWORD=${{ secrets.COSIGN_PASSWORD }} cosign sign -r \
-            -key <(echo -n "${{ secrets.COSIGN_PRIVATE_KEY }}" | base64 --decode) \
+            -key <(echo -n "${{ secrets.COSIGN_PRIVATE_KEY }}") \
             -a tag=${LIFECYCLE_IMAGE_TAG} \
             jonasasx/buildpacksio-lifecycle:${LIFECYCLE_IMAGE_TAG}@${MANIFEST_SHA}
           cosign verify -key cosign.pub -a tag=${LIFECYCLE_IMAGE_TAG} jonasasx/buildpacksio-lifecycle:${LIFECYCLE_IMAGE_TAG}
