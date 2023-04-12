@@ -132,6 +132,8 @@ jobs:
           MANIFEST_SHA=$(docker manifest push jonasasx/buildpacksio-lifecycle:${LIFECYCLE_IMAGE_TAG})
           echo "MANIFEST_SHA: $MANIFEST_SHA"
 
+          docker images
+
           docker push -a jonasasx/buildpacksio-lifecycle
       - name: Scan image
         if: github.event_name == 'push'
