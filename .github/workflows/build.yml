@@ -52,7 +52,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           DOCKER_CLI_EXPERIMENTAL=enabled
-          LIFECYCLE_IMAGE_TAG=$(cat tag.txt)
+          LIFECYCLE_IMAGE_TAG=$(docker images | grep lifecycle | tail -n1 | awk '{print $2}')
           echo "LIFECYCLE_IMAGE_TAG: ${LIFECYCLE_IMAGE_TAG}"
 
           docker images
