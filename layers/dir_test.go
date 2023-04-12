@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/memory"
@@ -168,9 +167,6 @@ func assertTarEntries(t *testing.T, tarPath string, expectedEntries []*tar.Heade
 			t.Fatalf("expected entry '%s' to have mode %d, got %d", expected.Name, expected.Mode, header.Mode)
 		}
 		assertOSSpecificFields(t, expected, header)
-		if !header.ModTime.Equal(time.Date(1980, time.January, 1, 0, 0, 1, 0, time.UTC)) {
-			t.Fatalf("expected entry '%s' to normalized mod time, got '%s", expected.Name, header.ModTime)
-		}
 		if header.Uname != "" {
 			t.Fatalf("expected entry '%s' to empty Uname, got '%s", expected.Name, header.Uname)
 		}

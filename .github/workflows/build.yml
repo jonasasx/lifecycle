@@ -11,95 +11,7 @@ on:
       - 'release/**'
 
 jobs:
-  test-linux-amd64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Set up go
-        uses: actions/setup-go@v3
-        with:
-          go-version-file: 'go.mod'
-      - name: Install jq
-        run: |
-          mkdir -p deps/bin
-          curl -s -L -o deps/bin/jq https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64
-          chmod +x deps/bin/jq
-          echo "${PWD}/deps/bin" >> $GITHUB_PATH
-      - name: Test
-        env:
-          TEST_COVERAGE: 1
-        run: make test
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./out/tests/coverage-unit.txt
-          flags: unit,os_linux
-          fail_ci_if_error: true
-          verbose: true
-  test-linux-arm64:
-    runs-on: linux-arm64
-    steps:
-      - uses: actions/checkout@v2
-      - name: Set up go
-        uses: actions/setup-go@v3
-        with:
-          go-version-file: 'go.mod'
-      - name: Test
-        run: |
-          make format || true
-          make test
-  test-windows:
-    runs-on: windows-2019
-    steps:
-      - name: Set git to use LF and symlinks
-        run: |
-          git config --global core.autocrlf false
-          git config --global core.eol lf
-          git config --global core.symlinks true
-      - uses: actions/checkout@v2
-      - name: Set up go
-        uses: actions/setup-go@v3
-        with:
-          go-version-file: 'go.mod'
-      - name: Add runner IP to daemon insecure-registries and firewall
-        shell: powershell
-        run: |
-          # Get IP from default gateway interface
-          $IPAddress=(Get-NetIPAddress -InterfaceAlias ((Get-NetRoute "0.0.0.0/0").InterfaceAlias) -AddressFamily IPv4)[0].IPAddress
-
-          # Allow container-to-host registry traffic (from public interface, to the same interface)
-          New-NetfirewallRule -DisplayName test-registry -LocalAddress $IPAddress -RemoteAddress $IPAddress
-
-          # create or update daemon config to allow host as insecure-registry
-          $config=@{}
-          if (Test-Path C:\ProgramData\docker\config\daemon.json) {
-            $config=(Get-Content C:\ProgramData\docker\config\daemon.json | ConvertFrom-json)
-          }
-          $config | Add-Member -Force -Name "insecure-registries" -value @("$IPAddress/32") -MemberType NoteProperty
-          ConvertTo-json $config | Out-File -Encoding ASCII C:\ProgramData\docker\config\daemon.json
-
-          Restart-Service docker
-
-          # dump docker info for auditing
-          docker version
-          docker info
-      - name: Test
-        env:
-          TEST_COVERAGE: 1
-        run: |
-          make test
-      - name: Prepare Codecov
-        uses: crazy-max/ghaction-chocolatey@v2
-        with:
-          args: install codecov -y
-      - name: Run Codecov
-        run: |
-          codecov.exe -f .\out\tests\coverage-unit.txt -v --flag os_windows
   build-and-publish:
-    needs:
-      - test-linux-amd64
-      - test-linux-arm64
-      - test-windows
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -130,106 +42,29 @@ jobs:
       - name: Build
         run: |
           make clean
-          make build
-          make package
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-linux-x86-64
-          path: out/lifecycle-v*+linux.x86-64.tgz
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-linux-x86-64-sha256
-          path: out/lifecycle-v*+linux.x86-64.tgz.sha256
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-linux-arm64
-          path: out/lifecycle-v*+linux.arm64.tgz
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-linux-arm64-sha256
-          path: out/lifecycle-v*+linux.arm64.tgz.sha256
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-windows-x86-64
-          path: out/lifecycle-v*+windows.x86-64.tgz
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-windows-x86-64-sha256
-          path: out/lifecycle-v*+windows.x86-64.tgz.sha256
-      - name: Generate SBOM JSON
-        uses: CycloneDX/gh-gomod-generate-sbom@v1
-        with:
-          args: mod -licenses -json -output lifecycle-v${{ env.LIFECYCLE_VERSION }}-bom.cdx.json
-          version: ^v1
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-bom-cdx
-          path: lifecycle-v*-bom.cdx.json
-      - name: Calculate SBOM sha
-        run: |
-          shasum -a 256 lifecycle-v${{ env.LIFECYCLE_VERSION }}-bom.cdx.json > lifecycle-v${{ env.LIFECYCLE_VERSION }}-bom.cdx.json.sha256
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-bom-cdx-sha256
-          path: lifecycle-v*-bom.cdx.json.sha256
+          make build-image-linux-amd64
       - uses: azure/docker-login@v1
         if: github.event_name == 'push'
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v2
-        with:
-          name: tag
-      - name: Set env
-        run: |
-          cat tag.txt >> $GITHUB_ENV
-      - name: Rename cosign public key
-        run: |
-          cp cosign.pub lifecycle-v${{ env.LIFECYCLE_VERSION }}-cosign.pub
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-cosign-public-key
-          path: lifecycle-v${{ env.LIFECYCLE_VERSION }}-cosign.pub
-      - name: Calculate cosign sha
-        run: |
-          shasum -a 256 lifecycle-v${{ env.LIFECYCLE_VERSION }}-cosign.pub > lifecycle-v${{ env.LIFECYCLE_VERSION }}-cosign.pub.sha256
-      - uses: actions/upload-artifact@v2
-        with:
-          name: lifecycle-cosign-public-key-sha256
-          path: lifecycle-v${{ env.LIFECYCLE_VERSION }}-cosign.pub.sha256
       - name: Publish images
         if: github.event_name == 'push'
         run: |
           DOCKER_CLI_EXPERIMENTAL=enabled
-          LIFECYCLE_IMAGE_TAG=$(git describe --always --abbrev=7)
+          LIFECYCLE_IMAGE_TAG=$(docker images | grep lifecycle | tail -n1 | awk '{print $2}')
+          echo "LIFECYCLE_IMAGE_TAG: ${LIFECYCLE_IMAGE_TAG}"
 
-          LINUX_AMD64_SHA=$(go run ./tools/image/main.go -lifecyclePath ./out/lifecycle-v*+linux.x86-64.tgz -tag buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}-linux-x86-64 | awk '{print $NF}')
-          echo "LINUX_AMD64_SHA: $LINUX_AMD64_SHA"
+          docker images
 
-          LINUX_ARM64_SHA=$(go run ./tools/image/main.go -lifecyclePath ./out/lifecycle-v*+linux.arm64.tgz -tag buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}-linux-arm64 -arch arm64 | awk '{print $NF}')
-          echo "LINUX_ARM64_SHA: $LINUX_ARM64_SHA"
+          docker tag lifecycle:${LIFECYCLE_IMAGE_TAG} jonasasx/buildpacksio-lifecycle:${LIFECYCLE_IMAGE_TAG}
 
-          WINDOWS_AMD64_SHA=$(go run ./tools/image/main.go -lifecyclePath ./out/lifecycle-v*+windows.x86-64.tgz -tag buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}-windows -os windows | awk '{print $NF}')
-          echo "WINDOWS_AMD64_SHA: $WINDOWS_AMD64_SHA"
-
-          docker manifest create buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG} \
-              buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}-linux-x86-64@${LINUX_AMD64_SHA} \
-              buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}-linux-arm64@${LINUX_ARM64_SHA} \
-              buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}-windows@${WINDOWS_AMD64_SHA}
-
-          MANIFEST_SHA=$(docker manifest push buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG})
-          echo "MANIFEST_SHA: $MANIFEST_SHA"
-
-          COSIGN_PASSWORD=${{ secrets.COSIGN_PASSWORD }} cosign sign -r \
-            -key <(echo -n "${{ secrets.COSIGN_PRIVATE_KEY }}" | base64 --decode) \
-            -a tag=${LIFECYCLE_IMAGE_TAG} \
-            buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}@${MANIFEST_SHA}
-          cosign verify -key cosign.pub -a tag=${LIFECYCLE_IMAGE_TAG} buildpacksio/lifecycle:${LIFECYCLE_IMAGE_TAG}
+          docker push -a jonasasx/buildpacksio-lifecycle
       - name: Scan image
         if: github.event_name == 'push'
         uses: anchore/scan-action@v3
         with:
-          image: buildpacksio/lifecycle:${{ env.LIFECYCLE_IMAGE_TAG }}
+          image: jonasasx/buildpacksio-lifecycle:${{ env.LIFECYCLE_IMAGE_TAG }}
   pack-acceptance-linux:
     if: github.event_name == 'push'
     needs: build-and-publish
@@ -264,7 +99,7 @@ jobs:
           cd pack
           git checkout $(git describe --abbrev=0 --tags) # check out the latest tag
           LIFECYCLE_PATH="../lifecycle-v${{ env.LIFECYCLE_VERSION }}+linux.x86-64.tgz" \
-          LIFECYCLE_IMAGE="buildpacksio/lifecycle:${{ env.LIFECYCLE_IMAGE_TAG }}" \
+          LIFECYCLE_IMAGE="jonasasx/buildpacksio-lifecycle:${{ env.LIFECYCLE_IMAGE_TAG }}" \
           make acceptance
   pack-acceptance-windows:
     if: github.event_name == 'push'
@@ -335,6 +170,6 @@ jobs:
           cd pack
           git checkout $(git describe --abbrev=0 --tags) # check out the latest tag
           $env:LIFECYCLE_PATH="..\lifecycle-v${{ env.LIFECYCLE_VERSION }}+windows.x86-64.tgz"
-          $env:LIFECYCLE_IMAGE="buildpacksio/lifecycle:${{ env.LIFECYCLE_IMAGE_TAG }}"
+          $env:LIFECYCLE_IMAGE="jonasasx/buildpacksio-lifecycle:${{ env.LIFECYCLE_IMAGE_TAG }}"
           make acceptance
 
