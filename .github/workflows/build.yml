@@ -52,7 +52,8 @@ jobs:
         if: github.event_name == 'push'
         run: |
           DOCKER_CLI_EXPERIMENTAL=enabled
-          LIFECYCLE_IMAGE_TAG=$(git describe --always --abbrev=7)
+          LIFECYCLE_IMAGE_TAG=$(cat tag.txt)
+          echo "LIFECYCLE_IMAGE_TAG: ${LIFECYCLE_IMAGE_TAG}"
 
           docker images
 
